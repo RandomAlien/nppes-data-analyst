@@ -179,6 +179,57 @@ def add_default_limit(sql: str, default_limit: int = 200) -> str:
     return f"{sql}\nLIMIT {default_limit}"
 
 
+def enforce_string_equality_wildcard_upper(sql: str) -> str:
+    """
+    Convert string equality predicates into case-insensitive wildcard matching.
+    Example:
+      PRACTICE_STATE = 'ca'
+    becomes:
+      UPPER(PRACTICE_STATE) LIKE '%CA%'
+    """
+    normalized = sql
+    identifier = r'(?:[A-Z_][A-Z0-9_\.]*|"[^"]+")'
+
+    left_eq_pattern = re.compile(
+        rf"""(?ix)
+        ({identifier})
+        \s*=\s*
+        '([^']+)'
+        """
+    )
+
+    right_eq_pattern = re.compile(
+        rf"""(?ix)
+        '([^']+)'
+        \s*=\s*
+        ({identifier})
+        """
+    )
+
+    def _escape_like(value: str) -> str:
+        return (
+            value.strip()
+            .replace("%", r"\%")
+            .replace("_", r"\_")
+            .replace("'", "''")
+            .upper()
+        )
+
+    def _left_repl(match: re.Match[str]) -> str:
+        column = match.group(1)
+        value = _escape_like(match.group(2))
+        return f"UPPER({column}) LIKE '%{value}%' ESCAPE '\\'"
+
+    def _right_repl(match: re.Match[str]) -> str:
+        value = _escape_like(match.group(1))
+        column = match.group(2)
+        return f"UPPER({column}) LIKE '%{value}%' ESCAPE '\\'"
+
+    normalized = left_eq_pattern.sub(_left_repl, normalized)
+    normalized = right_eq_pattern.sub(_right_repl, normalized)
+    return normalized
+
+
 class HuggingFaceGroqLLMClient:
     def __init__(
         self,
@@ -260,7 +311,8 @@ class NPPESDataAnalystEngine:
         payload = extract_json_object(content)
         if "sql" not in payload:
             raise ValueError("Model response missing 'sql' field.")
-        return validate_sql(payload["sql"])
+        validated_sql = validate_sql(payload["sql"])
+        return enforce_string_equality_wildcard_upper(validated_sql)
 
     def run_query(self, sql: str) -> tuple[list[str], list[tuple[Any, ...]]]:
         safe_sql = add_default_limit(sql)
@@ -301,4 +353,3 @@ class NPPESDataAnalystEngine:
         columns, rows = self.run_query(sql)
         answer = self.compose_answer(user_question, sql, columns, rows)
         return QueryResult(sql=sql, answer=answer, columns=columns, rows=rows)
-
