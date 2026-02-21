@@ -1,6 +1,6 @@
 # NPPES Data Analyst (Public Streamlit App)
 
-Production Streamlit app for querying NPPES provider data using DuckDB and Hugging Face Router (Groq-routed model).
+Production Streamlit app for querying NPPES provider data using DuckDB and Hugging Face Router (Groq-routed model). Check out the demo here - https://nppes-data-analyst-ajittiwari.streamlit.app/
 
 ## Features
 
